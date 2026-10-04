@@ -61,5 +61,13 @@ seam (an environment reader, a clock, a directory handed in by the caller)
 instead. A test that cannot meet these rules is an integration test or a
 benchmark.
 
-There are no integration tests or benchmarks yet; add them to the table above
-when the first one lands.
+Current integration harnesses and benchmarks:
+
+| Kind | Command | What it proves |
+| --- | --- | --- |
+| Integration | `./parity/run.sh [creature.json] [rows] [tolerance]` | Predictions agree with `@stsoftware/neat-ai`'s `creature.activate` (needs Deno and jsr.io; defaults to `../GRQ-cluster/network.json`). Fails when a prerequisite is missing. |
+| Benchmark | `cargo bench --bench predict [-- --creature <json>] [-- --rows N]` | Activation rows/s on one thread and on the whole pool. |
+
+The tests under `tests/` build GRQ-format archives in private temporary
+directories and run in process, so they are unit-category tests of the public
+API.

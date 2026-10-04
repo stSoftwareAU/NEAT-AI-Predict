@@ -24,79 +24,141 @@ flowchart LR
 
 ## Status
 
-The repository holds the command-line skeleton, request validation and the
-fleet install script. The engine is not in this build: a validated `predict`
-request exits `69` (`EX_UNAVAILABLE`) naming [issue #1](../../issues/1).
-
-| Issue | Delivers |
-| --- | --- |
-| [#2](../../issues/2) | Scaffold: crate, CLI, `runlib.sh` (this) |
-| [#3](../../issues/3) | Archive reader: dataset chain, shard index, SHA-256 verification, replacement precedence |
-| [#4](../../issues/4) | Creature loading, input-width contract, activation parity with `neat-core` |
-| [#5](../../issues/5) | Output partitions and provenance manifest |
-| [#6](../../issues/6) | Parallel execution and a rows/s benchmark |
-| [#7](../../issues/7) | `family-sync` CI job for `scripts/runlib.sh` |
+The engine is implemented: archive reader ([#3](../../issues/3)), activation
+with the width contract ([#4](../../issues/4)), GRQ-format output with a
+provenance manifest ([#5](../../issues/5)), parallel execution and a benchmark
+([#6](../../issues/6)), and the `runlib.sh` family-sync job
+([#7](../../issues/7)). The plan is [issue #1](../../issues/1).
 
 ## Usage
 
 ```bash
 neat_ai_predict predict \
-  --creature  ../GRQ-cluster/creature.json \
+  --creature  ../GRQ-cluster/network.json \
   --archive   ../Observations/116/b448fe6b43db398e \
-  --dataset   20261004T093634Z-31163-6lgt1w \   # optional; default datasets/latest.json
-  --from 2007-01-01 --to 2026-10-01 \           # optional, inclusive
   --output    ../Predictions/cluster-2026-10-04
-
-neat_ai_predict --version
 ```
 
-Exit codes follow BSD `sysexits.h`:
+Optional flags:
+
+- `--dataset <id>` reads a pinned snapshot. The default is the snapshot
+  `<archive>/latest.json` names.
+- `--from <YYYY-MM-DD>` and `--to <YYYY-MM-DD>` restrict the inclusive date
+  range.
+- `--version` prints the version.
+
+Progress goes to stderr. Exit codes follow BSD `sysexits.h`:
 
 | Code | Meaning |
 | --- | --- |
-| `0` | Predictions written |
+| `0` | Every row in range was predicted and written, or `--output` already held this exact run |
 | `2` | clap rejected the arguments (unknown flag, missing value, bad date) |
+| `3` | Finished, but some rows produced a non-finite output; they are listed in `manifest.json` and not written |
 | `64` | The request refused itself: `--from` after `--to`, an unsafe `--dataset`, an empty path |
-| `66` | `--creature` is not a file or `--archive` is not a directory |
-| `69` | The engine is not implemented in this build |
-
-Every refusal is printed on stderr. Nothing is ever skipped quietly.
+| `65` | The archive or creature is malformed or incompatible (bad index, hash mismatch, wider creature, recurrent creature) |
+| `66` | The creature or an archive file cannot be read |
+| `73` | `--output` already holds a different run; it is never overwritten |
+| `74` | Output could not be written |
 
 ### Input: the GRQ identified observation archive
 
 The archive format is owned by GRQ and specified in its
-`docs/Identified_Observation_Archive.md`. In short:
+`docs/Identified_Observation_Archive.md`:
 
-- `--archive` names a **fingerprint root**, `<root>/<extension>/<fingerprint>`.
-  Rows under a different fingerprint were assembled under different feature
-  semantics and are never mixed.
-- Shards are `<yyyy>/<mm>/<prefix>/<chunk>.bin`: exactly `inputCount`
-  little-endian `f32` values per row, in feature order, with no target. The
-  sibling `<chunk>.index.json` carries the semantics, the shard's SHA-256 and
-  one `{symbol, date, exchange?, alias?, row}` entry per row.
-- `datasets/<id>.json` are immutable snapshots; `datasets/latest.json` points
-  at the newest. A run reads only the shards its chosen snapshot references.
+```text
+<fp>/latest.json                          {"datasetId": …} — the newest snapshot
+<fp>/datasets/<id>.json                   immutable manifest, chained to its predecessor
+<fp>/<yyyy>/<mm>/<prefix>/<chunk>.bin     inputCount little-endian f32 per row, no target
+<fp>/<yyyy>/<mm>/<prefix>/<chunk>.index.json
+```
 
-### Contract rules
+- **The fingerprint root.** `--archive` names
+  `<root>/<extension>/<fingerprint>`. The reader refuses a root whose two
+  last components differ from the extension and fingerprint the snapshot
+  declares, so rows assembled under other semantics are never mixed in.
+- **Snapshots chain.** A snapshot is its manifest plus every ancestor. Rows
+  resolve oldest publication first, with shards in manifest order, so a
+  restated row supersedes the earlier copy. This is GRQ's own rule.
+- **Nothing is trusted.** The reader checks:
+  - every dataset id and shard path, before it is joined onto the root;
+  - every index, against its manifest entry and the snapshot's semantics;
+  - every row identity, against its partition;
+  - every payload, by size and SHA-256 before any of its rows is used.
 
-- The creature's top-level `input` / `output` counts are authoritative and must
-  be at least 1. A creature narrower than the archive is extended with
-  unconnected inputs; a creature **wider** than the archive is refused — that
-  would be a contraction, and GRQ never contracts an observation set.
-- Activation goes through the same `neat-core` engine the fleet's
-  `rust_scorer` uses, so predictions are comparable with fleet scores. There
-  is no fallback engine.
-- A row whose output is not finite is reported by `symbol@date` and never
-  written as a number.
-- Every shard's SHA-256 is verified before a row of it is used.
+  It also refuses any non-finite observation, because GRQ never archives
+  one.
+
+### Activation and the contract rules
+
+- **Width counts.** The creature's top-level `input` / `output` are
+  authoritative and must be at least 1.
+- **Narrower creatures.** A creature narrower than the archive runs as if
+  extended with unconnected inputs: GRQ's "extend, never contract".
+- **Wider creatures** are refused.
+- **Recurrent creatures.** Only a `forwardOnly` creature is accepted. A
+  recurrent creature's predictions would depend on row order.
+- **The kernel.** Rows run through `neat-core`'s scalar
+  `CompiledNetwork::activate_into`, the crate the fleet's `rust_scorer`
+  scores with. Rows are spread across the rayon pool, and the bulk path is
+  bit-identical to `neat-core`'s reference `activate`.
+- **Agreement with GRQ's daily scoring.** Measured against
+  `@stsoftware/neat-ai` 7.0.48 `creature.activate`, the call GRQ's daily
+  scoring makes. The test used GRQ's production cluster creature (2 511
+  inputs, 8 236 neurons) over 20 000 rows:
+  - 18 961 outputs were bit-identical;
+  - the largest difference was 1.9e-6 (about 3e-7 relative), from native
+    `libm` against JavaScript `Math` in `tanh`/`exp`.
+
+  `neat-core`'s batched SIMD kernel was measured too, and agreed less
+  (1 654 / 2 000, max 2.4e-6).
 
 ### Output
 
-One partition per `yyyy/mm/prefix` (`output_count` little-endian `f64` per
-row plus an index JSON) and a top-level `manifest.json` recording the creature
-UUID and file hash, the archive fingerprint and dataset id, the engine and
-`neat_ai_predict` versions, and per-partition row counts — so any consumer can
-prove which model scored which rows. Details in [#5](../../issues/5).
+The output layout is GRQ's prediction cache
+(`src/inference/PredictionStore.ts`), so GRQ's TypeScript and
+GRQ-AutoTraderBackTesting read it without this crate:
+
+```text
+<output>/<yyyy>/<mm>/<prefix>.bin          outputCount little-endian f64 per row
+<output>/<yyyy>/<mm>/<prefix>.index.json   schema grq.predictions.partition/1
+<output>/manifest.json                     schema neat-ai-predict.run/1
+```
+
+- **Index rows.** Each index row is `{symbol, date, exchange?, row}`.
+- **Manifest contents.** The manifest records:
+  - the identity key GRQ's `predictionIdentity` would compute, plus its
+    parts: creature, archive semantics, dataset, engine and engine version;
+  - the `neat-core` git source and commit, the date range and the dataset
+    chain;
+  - every partition's row count and SHA-256;
+  - the rows refused for a non-finite output.
+- **Creature identity.** A creature is identified as `sha256:<file hash>`.
+  GRQ creature files carry no UUID field.
+- **Atomic writes.** A run is written into a staging directory beside
+  `<output>` and renamed into place after the manifest, so a killed run
+  leaves nothing that looks finished.
+- **Repeat runs.** Repeating a run whose output already exists is a no-op.
+  Pointing a different run at it is refused.
+
+### Performance
+
+Measured on a 10-core Apple-silicon host that was not idle (load average
+about 3), so treat these as indicative:
+
+| Measurement | Rows/s |
+| --- | --- |
+| GRQ cluster creature, activation only, 1 thread | ~8 800 |
+| GRQ cluster creature, activation only, 10 threads | ~60 000 |
+| End to end, 20 000 rows in 630 partitions, including hashing and writing | ~31 700 |
+
+TypeScript `HistoricalInferenceProvider` on the WASM engine was measured at
+about 37 000 rows/s cold, per GRQ's own measurement. At that scale a 20-year
+archive is minutes. Re-measure with:
+
+```bash
+cargo bench --bench predict -- --creature ../GRQ-cluster/network.json
+./parity/run.sh ../GRQ-cluster/network.json 20000
+```
 
 ## Installing on a fleet host
 
@@ -118,8 +180,9 @@ from `scripts/runlib.sh` on
 changes are made there and re-copied outward. `scripts/test-runlib.sh` asserts
 the contract that copy owes this crate against fixture checkouts with a
 `cargo` shim, so "compiled nothing" is read off a log of every invocation
-rather than assumed. The CI job that refreshes the copy on every pull request
-is [#7](../../issues/7).
+rather than assumed. The `family-sync` workflow fetches core's copy on every
+pull request, commits a refresh onto the PR branch when the two differ, and
+fails the run so the re-run gates the canonical bytes.
 
 It needs `cargo`, `rustc` and `jq` on the host — `jq` is what reads
 `cargo metadata` — and exits non-zero naming the missing one rather than
@@ -214,6 +277,7 @@ CI runs the same checks on every pull request into `Develop`, `main` or
 | `codeql.yml` | GitHub CodeQL scanning. |
 | `dependency-review.yml` | New-dependency vulnerability and licence review. |
 | `sbom.yml` | [Software Bill of Materials (SBOM)](https://en.wikipedia.org/wiki/Software_bill_of_materials) in CycloneDX format, uploaded as an artefact. |
+| `family-sync.yml` | `family-sync`: `scripts/runlib.sh` byte-identical to NEAT-AI-core `Develop`, refreshed onto the PR branch when it drifts. `runlib-contract`: `scripts/test-runlib.sh`. |
 
 Every third-party action is pinned to a full commit SHA, with its version in
 a trailing comment. Downloaded binaries are pinned by version and SHA-256.
@@ -234,9 +298,16 @@ the template's settings change.
 
 | Path | Purpose |
 | --- | --- |
-| `src/lib.rs` | Library: the request model, market dates, dataset-id and request validation, with unit tests. |
-| `src/main.rs` | Binary: clap argument parsing, filesystem checks, exit-code mapping. |
-| `tests/` | Public-API tests, run in process. |
+| `src/lib.rs` | Library root: the request model, market dates, dataset-id and request validation. |
+| `src/archive.rs` | GRQ observation archive reader (#3). |
+| `src/engine.rs` | Creature loading, width contract, activation (#4). |
+| `src/output.rs` | Prediction partitions and run manifest (#5). |
+| `src/run.rs` | One run across the rayon pool (#6). |
+| `src/main.rs` | Binary: clap argument parsing, exit-code mapping. |
+| `build.rs` | Records the resolved `neat-core` version and commit from `Cargo.lock`. |
+| `tests/` | Public-API tests against GRQ-format fixture archives, run in process. |
+| `benches/predict.rs` | On-demand activation throughput benchmark. |
+| `parity/` | On-demand parity harness against `@stsoftware/neat-ai` (Deno). |
 | `scripts/runlib.sh` | Canonical NEAT-AI-core install script (do not edit here). |
 | `scripts/test-runlib.sh` | Contract tests for that copy, with a `cargo` shim. |
 | `scripts/` | Other shell helpers (quarantined `cargo update`, spelling, repository settings) and their tests. |

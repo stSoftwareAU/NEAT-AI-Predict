@@ -1,0 +1,142 @@
+name: Family Sync
+
+# Keeps scripts/runlib.sh byte-identical to NEAT-AI-core `Develop` (core #680,
+# issue #7) and runs its contract tests.
+#
+#   family-sync      fetch core's copy; when this branch's has drifted, commit
+#                    the refresh onto the PR branch and FAIL the run, so the
+#                    re-run gates the canonical bytes rather than reporting
+#                    unlinted, untested content as checked.
+#   runlib-contract  scripts/test-runlib.sh — the install/skip/rebuild contract
+#                    the canonical copy owes this crate, against a cargo shim.
+#
+# Mirrors the `family-sync` job in NEAT-AI-Refinery's ci.yml.
+
+on:
+  pull_request:
+    branches: [Develop, main, milestone/*]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  family-sync:
+    name: family-sync
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The comparison itself needs no write access, so it runs for fork PRs too:
+    # only the push back is guarded. A fork that edits the canonical copy is
+    # still caught — it just has to be corrected by hand.
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+          # The push token is never persisted into .git/config, where any later
+          # build script could read it; it is supplied per command instead.
+          persist-credentials: false
+
+      - name: Fetch the canonical scripts/runlib.sh from NEAT-AI-core
+        env:
+          CANONICAL_URL: https://raw.githubusercontent.com/stSoftwareAU/NEAT-AI-core/Develop/scripts/runlib.sh
+        run: |
+          set -euo pipefail
+          # `--fail` is what makes a fetch error an error: without it curl
+          # exits 0 having written a 404 body, and that body would be committed
+          # over the canonical copy as though it were the real thing.
+          curl --fail --silent --show-error --location \
+            --retry 3 --retry-delay 5 --max-time 60 \
+            --output "${RUNNER_TEMP}/runlib.sh" "$CANONICAL_URL"
+          if [ ! -s "${RUNNER_TEMP}/runlib.sh" ]; then
+            echo "Fetched an empty scripts/runlib.sh from ${CANONICAL_URL}" >&2
+            exit 1
+          fi
+
+      - name: Refresh the copy when it has drifted
+        id: compare
+        run: |
+          set -euo pipefail
+          if cmp -s "${RUNNER_TEMP}/runlib.sh" scripts/runlib.sh; then
+            echo "OK   scripts/runlib.sh is byte-identical to NEAT-AI-core Develop"
+            echo "drifted=false" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "::notice::scripts/runlib.sh has drifted from NEAT-AI-core Develop — refreshing it"
+          diff -u scripts/runlib.sh "${RUNNER_TEMP}/runlib.sh" || true
+          cp "${RUNNER_TEMP}/runlib.sh" scripts/runlib.sh
+          chmod +x scripts/runlib.sh
+          echo "drifted=true" >>"$GITHUB_OUTPUT"
+
+      - name: Commit and push the refreshed copy
+        if: >-
+          steps.compare.outputs.drifted == 'true'
+          && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PUSH_TOKEN: ${{ secrets.ACTIONS_PUSH || secrets.GITHUB_TOKEN }}
+          HAS_PUSH_PAT: ${{ secrets.ACTIONS_PUSH != '' }}
+        run: |
+          set -euo pipefail
+          # Which token pushed decides whether the new commit re-runs CI, so
+          # say it rather than leaving the fallback silent.
+          if [ "$HAS_PUSH_PAT" = "true" ]; then
+            echo "Pushing with ACTIONS_PUSH — the refreshed commit will start its own CI run"
+          else
+            echo "Pushing with GITHUB_TOKEN — the refreshed commit starts no CI run; re-run this workflow"
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/runlib.sh
+          git commit -m "🪒 sync scripts/runlib.sh from NEAT-AI-core Develop"
+          # `base64 | tr -d '\n'` rather than GNU-only `base64 -w0`, and the
+          # encoded credential is masked: the runner's masker knows the secret,
+          # not its base64, so an unmasked value would survive any later echo.
+          credential="$(printf 'x-access-token:%s' "$PUSH_TOKEN" | base64 | tr -d '\n')"
+          echo "::add-mask::${credential}"
+          # Rebase onto whatever landed while this job ran rather than clobbering it.
+          git fetch --no-tags origin "+refs/heads/${HEAD_REF}:refs/remotes/origin/${HEAD_REF}"
+          git rebase "origin/${HEAD_REF}"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic ${credential}" \
+            push origin "HEAD:${HEAD_REF}"
+
+      # Drift is a failure even once it has been corrected: the refreshed copy
+      # was pushed, not gated, so the run goes red and the re-run gates the
+      # real bytes.
+      - name: Fail the run when the copy had drifted
+        if: steps.compare.outputs.drifted == 'true'
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          set -euo pipefail
+          echo "scripts/runlib.sh had drifted from NEAT-AI-core Develop." >&2
+          if [ "${HEAD_REPO}" = "${GITHUB_REPOSITORY}" ]; then
+            echo "The refreshed copy has been pushed onto this branch — re-run CI so the canonical bytes are linted and contract-tested." >&2
+          else
+            echo "This PR comes from a fork, so the refresh cannot be pushed — copy scripts/runlib.sh from NEAT-AI-core Develop by hand." >&2
+          fi
+          exit 1
+
+  runlib-contract:
+    name: runlib-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # runlib.sh reads `cargo metadata` with jq; the test shims cargo and
+      # rustc, so no toolchain is installed and nothing is compiled.
+      - name: Check jq is present
+        run: jq --version
+      - name: Run the runlib.sh contract tests
+        run: ./scripts/test-runlib.sh

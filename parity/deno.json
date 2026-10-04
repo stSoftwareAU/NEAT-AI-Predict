@@ -1,0 +1,7 @@
+{
+  "imports": {
+    "@std/crypto": "jsr:@std/crypto@^1",
+    "@std/encoding": "jsr:@std/encoding@^1",
+    "@stsoftware/neat-ai": "jsr:@stsoftware/neat-ai@7.0.48"
+  }
+}

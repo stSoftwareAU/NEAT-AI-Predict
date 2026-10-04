@@ -1,6 +1,6 @@
 [package]
 name = "neat_ai_predict"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.98"
 license = "Apache-2.0"
@@ -15,12 +15,30 @@ workspace = true
 
 # Add each dependency with a compatible-range version (`serde = "1"`), never
 # `*` or a bare git branch, and remove any that no source file `use`s — the
-# best-practice scan files dead dependencies. `neat-core` arrives with the
-# activation engine (issue #4) and needs its git source allowed in deny.toml.
+# best-practice scan files dead dependencies.
 [dependencies]
 clap = { version = "4", features = ["derive"] }
+# The fleet's activation engine — the same crate `rust_scorer` scores with, so
+# predictions are comparable with fleet scores (GRQ #4280). Pinned to a release
+# tag (the `version` requirement keeps cargo-deny from reading the git source
+# as a wildcard); its git source is allowed in deny.toml. Rows are activated
+# with the scalar kernel and parallelised here, so neat-core's own `parallel`
+# feature is not needed.
+neat-core = { version = "0.22", git = "https://github.com/stSoftwareAU/NEAT-AI-core", tag = "v0.22.16" }
+serde = { version = "1", features = ["derive"] }
+# `float_roundtrip`: exact float parsing, as neat-core requires for creature
+# weights; enabling it here keeps one serde_json configuration in the graph.
+serde_json = { version = "1", features = ["float_roundtrip"] }
+sha2 = "0.10"
+# Row-parallel activation across the pool (issue #6).
+rayon = "1"
 
 [dev-dependencies]
+
+# On-demand throughput benchmark (issue #6). Never part of ./quality.sh or CI.
+[[bench]]
+name = "predict"
+harness = false
 
 # The `[workspace]` table makes this manifest the workspace root, so the
 # profile and lint settings below apply even after more member crates are

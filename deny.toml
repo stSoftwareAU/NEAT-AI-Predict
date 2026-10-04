@@ -43,6 +43,5 @@ ignore = []
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-# Add internal git dependencies explicitly, e.g.
-# allow-git = ["https://github.com/stSoftwareAU/<repo>"]
-allow-git = []
+# neat-core: the fleet's activation engine, pinned to a release tag in Cargo.toml.
+allow-git = ["https://github.com/stSoftwareAU/NEAT-AI-core"]

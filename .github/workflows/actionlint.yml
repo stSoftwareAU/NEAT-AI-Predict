@@ -1,0 +1,45 @@
+name: Actionlint
+
+# Lints the workflow YAML under `.github/workflows/` with actionlint, which
+# catches broken expressions, unknown action inputs and ShellCheck findings
+# in `run:` blocks that plain YAML parsing misses. The binary is downloaded
+# from a version-pinned upstream release and verified against its SHA-256
+# checksum.
+
+on:
+  pull_request:
+    branches: [Develop, main, milestone/*]
+
+permissions:
+  contents: read
+
+# Only the latest run for a given ref matters, so a per-ref group with
+# cancellation stops rapid pushes spawning parallel, redundant work.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  actionlint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ACTIONLINT_VERSION: "1.7.12"
+      ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes, so the job token must not be left behind
+          # in .git/config where a later step could read it.
+          persist-credentials: false
+      - name: Install pinned actionlint
+        run: |
+          set -euo pipefail
+          archive="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          curl -sSfL --retry 3 \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${archive}" \
+            -o "$archive"
+          echo "${ACTIONLINT_SHA256}  ${archive}" | sha256sum -c -
+          tar -xzf "$archive" actionlint
+      - name: Run actionlint
+        run: ./actionlint -color

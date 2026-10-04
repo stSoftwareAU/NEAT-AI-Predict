@@ -1,0 +1,115 @@
+name: Cargo Quality
+
+# Pull-request gate for the Rust code: formatting, Clippy, compile, tests,
+# documentation and cargo-deny. Each concern is its own job so they run in
+# parallel and a failure names exactly what broke. `./quality.sh` runs the
+# same commands locally.
+
+on:
+  pull_request:
+    branches: [Develop, main, milestone/*]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Only the latest run for a given ref matters, so a per-ref group with
+# cancellation stops rapid pushes spawning parallel, redundant work.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Replaces `.cargo/config.toml` rustflags, so CI builds stay portable
+  # (no `target-cpu=native`) and every warning fails the build.
+  RUSTFLAGS: "-D warnings"
+  RUSTDOCFLAGS: "-D warnings"
+
+jobs:
+  lint:
+    name: Format, Clippy and Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes, so the job token must not be left behind
+          # in .git/config where a later step could read it.
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          components: rustfmt, clippy
+          cache-key: lint
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Run Clippy
+        run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
+      - name: Compile check
+        run: cargo check --locked --workspace --all-targets --all-features
+
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: test
+      # `-q` keeps a green run to one summary line per test binary; a
+      # failure still prints the test name, assertion message and backtrace.
+      - name: Run tests
+        run: cargo test -q --locked --workspace --all-features
+
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: docs
+      - name: Build documentation
+        run: cargo doc --locked --workspace --no-deps
+
+  deny:
+    name: Cargo Deny
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
+        with:
+          tool: cargo-deny@0.20.2
+      - name: Check licences, bans, advisories and sources
+        run: cargo deny --locked check
+
+  # Single required status check for rulesets: succeeds only when every job
+  # above succeeded, so adding a job never needs a ruleset change.
+  quality:
+    name: quality
+    needs: [lint, test, docs, deny]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify all Cargo quality jobs succeeded
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          set -euo pipefail
+          for result in $RESULTS; do
+            if [[ "$result" != "success" ]]; then
+              echo "A Cargo quality job finished with '$result'; blocking merge." >&2
+              exit 1
+            fi
+          done
+          echo "All Cargo quality jobs succeeded."

@@ -1,0 +1,46 @@
+name: SBOM
+
+# Software Bill of Materials. Exports the dependency graph pinned in
+# Cargo.lock as a CycloneDX document and uploads it as a build artefact, so
+# "are we affected by advisory X?" is a lookup rather than a rebuild. Active
+# vulnerabilities are gated by `cargo-audit.yml` and `cargo-deny`; this
+# workflow only emits the inventory.
+
+on:
+  pull_request:
+    branches: [Develop, main, milestone/*]
+  push:
+    # Release tags only: a tagged build publishes the SBOM that matches it.
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Only the latest run for a given ref matters, so a per-ref group with
+# cancellation stops rapid pushes spawning parallel, redundant work.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sbom:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes, so the job token must not be left behind
+          # in .git/config where a later step could read it.
+          persist-credentials: false
+      - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
+        with:
+          tool: cargo-cyclonedx@0.5.9
+      - name: Generate CycloneDX SBOM
+        run: cargo cyclonedx --format json --all
+      - name: Upload SBOM artefact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sbom
+          path: "*.cdx.json"
+          if-no-files-found: error

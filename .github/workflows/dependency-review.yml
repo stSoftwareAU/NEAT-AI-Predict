@@ -1,0 +1,35 @@
+name: Dependency Review
+
+# Diffs the pull request's dependency manifests against the base branch and
+# fails when a newly introduced dependency carries a known vulnerability or a
+# disallowed licence.
+#
+# The action is free on public repositories but needs GitHub Advanced Security
+# on private ones, so the job is skipped (not failed) while the repository is
+# private.
+
+on:
+  pull_request:
+    branches: [Develop, main, milestone/*]
+
+permissions:
+  contents: read
+
+# Only the latest run for a given ref matters, so a per-ref group with
+# cancellation stops rapid pushes spawning parallel, redundant work.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-review:
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes, so the job token must not be left behind
+          # in .git/config where a later step could read it.
+          persist-credentials: false
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0

@@ -1,0 +1,13 @@
+# Host-local rustc flags for this workspace.
+#
+# `target-cpu=native` tunes the release binary for the machine that builds it —
+# the fleet pattern is `cargo build --release` on the host that runs the
+# artefact. Remove this table if the project publishes a crate, targets wasm32,
+# or copies the binary to another machine: a binary built for one CPU dies with
+# an illegal-instruction fault on a CPU that lacks the instructions it uses.
+#
+# Stable Cargo has no per-profile rustflags. An exported `RUSTFLAGS` (as in
+# `./quality.sh` and CI) *replaces* these config flags entirely, so the quality
+# gate keeps `-D warnings` without inheriting `native`.
+[target.'cfg(not(target_arch = "wasm32"))']
+rustflags = ["-C", "target-cpu=native"]

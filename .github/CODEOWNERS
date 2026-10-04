@@ -1,0 +1,10 @@
+# CODEOWNERS — review routing for this repository.
+#
+# CODEOWNERS uses last-match-wins, so the catch-all goes first and the CI
+# rules after it. It routes review requests; it is not a merge gate on its
+# own. Workflow and composite-action changes run with repository secrets, so
+# they always request a maintainer review.
+*                       @nleck @Green-Beret
+/.github/workflows/     @nleck @Green-Beret
+/.github/actions/       @nleck @Green-Beret
+/.github/CODEOWNERS     @nleck @Green-Beret

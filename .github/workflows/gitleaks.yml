@@ -1,0 +1,82 @@
+name: Gitleaks
+
+# Detect secrets in pull request diffs.
+#
+# Third-party actions are pinned to 40-character commit SHAs so a hijacked
+# tag cannot exfiltrate CI secrets.
+#
+# gitleaks-action@v3 requires an organisation licence (GITLEAKS_LICENSE)
+# on org-owned repos. Dependabot-authored PRs do not receive Actions
+# secrets, so the licence is empty for them and the action would exit with
+# ErrLicense before scanning. For those licence-less runs we fall back to
+# the free, open-source gitleaks CLI, pinned by version and verified
+# against its published SHA-256 checksum.
+
+on:
+  pull_request:
+    # A GitHub branch filter `*` never matches a `/`, so `["*"]` would
+    # silently skip every `milestone/<slug>` PR. The targets are listed
+    # explicitly instead.
+    branches: [Develop, main, milestone/*]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+# Only the latest commit's result matters for a PR check, so a per-ref
+# group with cancellation stops rapid pushes spawning parallel,
+# redundant runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gitleaks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Exposed at job level so step-level `if:` can branch on whether the
+    # org licence secret is present — the `secrets` context is not
+    # available in `if:` conditions, but `env` is.
+    env:
+      GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes, so the job token must not be left behind
+          # in .git/config where a later step could read it.
+          persist-credentials: false
+          fetch-depth: 0
+      # Fetch the PR base branch so the computed commit range
+      # (`<base_sha>..<head_sha>`) resolves on the runner.
+      - name: Fetch base branch
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: git fetch origin "$BASE_REF:$BASE_REF" || true
+      # Licensed path: when the org Gitleaks licence is available, use the
+      # upstream action so the licence is applied.
+      - name: Gitleaks (licensed action)
+        if: env.GITLEAKS_LICENSE != ''
+        uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+      # Licence-less fallback (e.g. Dependabot PRs): the free open-source
+      # gitleaks CLI needs no licence. It scans the PR commit range,
+      # mirroring the action's diff scan.
+      - name: Gitleaks (open-source CLI fallback)
+        if: env.GITLEAKS_LICENSE == ''
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+          GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          url="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}"
+          curl -sSfL "$url" -o "$archive"
+          echo "${GITLEAKS_SHA256}  ${archive}" | sha256sum -c -
+          tar -xzf "$archive" gitleaks
+          ./gitleaks git --redact --no-banner --exit-code 1 \
+            --log-opts="${BASE_SHA}..${HEAD_SHA}" .

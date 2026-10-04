@@ -1,0 +1,6 @@
+# Pin a concrete stable channel so every machine and CI run uses the same
+# compiler and the same lint set. Move it forward in its own reviewed PR.
+[toolchain]
+channel = "1.98.0"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

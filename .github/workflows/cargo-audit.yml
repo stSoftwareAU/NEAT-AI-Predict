@@ -1,0 +1,38 @@
+name: Cargo Audit
+
+# RustSec advisory audit of Cargo.lock. Runs on every pull request and weekly,
+# because the advisory database changes even when the lockfile does not.
+
+on:
+  pull_request:
+    branches: [Develop, main, milestone/*]
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Only the latest run for a given ref matters, so a per-ref group with
+# cancellation stops rapid pushes (or overlapping scheduled runs)
+# spawning parallel, redundant work.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes, so the job token must not be left behind
+          # in .git/config where a later step could read it.
+          persist-credentials: false
+      # Prebuilt, version-pinned binary: no from-source compile per run.
+      - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
+        with:
+          tool: cargo-audit@0.22.2
+      - name: Run cargo audit
+        run: cargo audit

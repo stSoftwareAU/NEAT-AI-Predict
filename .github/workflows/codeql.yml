@@ -1,0 +1,53 @@
+name: CodeQL
+
+# CodeQL code scanning (advanced setup) for Rust and the workflows
+# themselves. Neither language needs a build. Code scanning is free on public
+# repositories but needs GitHub Advanced Security on private ones, so the job
+# is skipped (not failed) while the repository is private; Semgrep covers
+# static analysis either way.
+
+on:
+  pull_request:
+    branches: [Develop, main, milestone/*]
+  schedule:
+    # Weekly, so the baseline stays fresh in a quiet week.
+    - cron: "30 4 * * 1"
+
+permissions: {}
+
+# Only the latest run for a given ref matters, so a per-ref group with
+# cancellation stops rapid pushes (or overlapping scheduled runs)
+# spawning parallel, redundant work.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyse:
+    name: Analyse (${{ matrix.language }})
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [actions, rust]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes, so the job token must not be left behind
+          # in .git/config where a later step could read it.
+          persist-credentials: false
+      - name: Initialise CodeQL
+        uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          category: "/language:${{ matrix.language }}"

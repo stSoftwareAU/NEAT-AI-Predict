@@ -1,0 +1,55 @@
+[package]
+name = "template-rust"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "Apache-2.0"
+description = "Template for stSoftwareAU Rust projects that passes the VibeCoder best-practice scans."
+repository = "https://github.com/stSoftwareAU/template-rust"
+readme = "README.md"
+# Internal tooling: never publish to crates.io by accident.
+publish = false
+
+[lints]
+workspace = true
+
+# No dependencies yet. Add each one with a compatible-range version
+# (`serde = "1"`), never `*` or a bare git branch, and remove any that no
+# source file `use`s — the best-practice scan files dead dependencies.
+[dependencies]
+
+[dev-dependencies]
+
+# The `[workspace]` table makes this manifest the workspace root, so the
+# profile and lint settings below apply even after more member crates are
+# added under `members`.
+[workspace]
+resolver = "3"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+missing_docs = "deny"
+unused = "deny"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+dbg_macro = "deny"
+todo = "deny"
+print_stdout = "warn"
+collapsible_if = "deny"
+filter_next = "deny"
+
+# Dev builds: compile as fast as possible. `line-tables-only` keeps the
+# file:line of a panic without full debug info; `opt-level` and incremental
+# compilation stay at Cargo's defaults (0 / on).
+[profile.dev]
+debug = "line-tables-only"
+
+# Release builds: the fastest artefact, however long it takes to compile.
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1

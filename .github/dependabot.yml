@@ -1,0 +1,36 @@
+# Dependabot configuration.
+#
+# Registering each ecosystem activates GitHub's push-based advisory feed, which
+# raises a security update PR the moment an advisory lands against a pinned
+# dependency, independent of the CI schedule. Routine version bumps are
+# quarantined by `cooldown` (security updates ignore it); `renovate.json`
+# carries the matching 24-hour `minimumReleaseAge` for the fleet's quarantine
+# audit.
+#
+# Cargo *version* updates are disabled (`open-pull-requests-limit: 0`) because
+# `.github/workflows/cargo-upgrade.yml` already raises one quarantined weekly
+# `cargo update` PR; Cargo *security* updates are unaffected by that limit.
+version: 2
+
+updates:
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 0
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7

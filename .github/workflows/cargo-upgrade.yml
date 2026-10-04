@@ -1,0 +1,50 @@
+name: Cargo Dependency Updates
+
+# Weekly `cargo update` of Cargo.lock, raised as a pull request so the normal
+# CI gates judge it. `scripts/cargo-update-quarantined.sh` holds back any
+# crate version published less than VIBE_BUMP_QUARANTINE_HOURS ago, so this
+# workflow honours the same 24-hour external-dependency quarantine as
+# `renovate.json` and Dependabot's `cooldown`.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# Only the latest run for a given ref matters, so a per-ref group with
+# cancellation stops overlapping scheduled runs spawning redundant work.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VIBE_BUMP_QUARANTINE_HOURS: "24"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # create-pull-request authenticates its own push with the `token`
+          # input below, so the checkout credential need not stay on disk.
+          persist-credentials: false
+      - uses: ./.github/actions/setup-rust
+        with:
+          cache-key: upgrade
+      - name: cargo update with release-age quarantine
+        run: ./scripts/cargo-update-quarantined.sh
+      - uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+        with:
+          # Org-level PAT; falls back to GITHUB_TOKEN when the secret is
+          # unset. Using the PAT ensures PR workflows fire on the result.
+          token: ${{ secrets.ACTIONS_PUSH || secrets.GITHUB_TOKEN }}
+          commit-message: "chore: update Cargo dependencies"
+          title: "chore: update Cargo dependencies"
+          branch: chore/cargo-upgrade
+          base: Develop
+          body: "Automated weekly `cargo update`. Versions younger than the 24-hour quarantine are held back. CI decides."

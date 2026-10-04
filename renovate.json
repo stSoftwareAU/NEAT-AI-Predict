@@ -1,0 +1,15 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "minimumReleaseAge": "24 hours",
+  "vulnerabilityAlerts": { "enabled": true },
+  "osvVulnerabilityAlerts": true,
+  "packageRules": [
+    {
+      "description": "Internal stSoftwareAU packages bypass the external quarantine so they update immediately.",
+      "matchPackageNames": ["/^stSoftwareAU\\//"],
+      "matchSourceUrls": ["https://github.com/stSoftwareAU/**"],
+      "minimumReleaseAge": false
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+name: Markdown Lint
+
+# Lints every Markdown file against `.markdownlint-cli2.jsonc` and checks
+# spelling across the repository with codespell (`scripts/spell-check.sh`).
+
+on:
+  pull_request:
+    branches: [Develop, main, milestone/*]
+
+permissions:
+  contents: read
+
+# Only the latest run for a given ref matters, so a per-ref group with
+# cancellation stops rapid pushes spawning parallel, redundant work.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  markdownlint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Nothing here pushes, so the job token must not be left behind
+          # in .git/config where a later step could read it.
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "lts/*"
+      # Pinned to an exact version so the install sits inside the 24h
+      # dependency quarantine — a `run:` install is not a manifest, so no
+      # dependency manager governs it. `--ignore-scripts` keeps install-time
+      # lifecycle scripts off the runner.
+      - name: Install markdownlint-cli2
+        run: npm install -g --ignore-scripts markdownlint-cli2@0.23.2
+      - name: Run markdownlint-cli2
+        run: markdownlint-cli2
+
+  spelling:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Exact version for the same reason as markdownlint-cli2 above.
+      - name: Install codespell
+        run: pipx install codespell==2.4.2
+      - name: Run codespell
+        run: ./scripts/spell-check.sh

@@ -1,17 +1,26 @@
-//! Library half of `neat_ai_predict`.
+//! Library half of `neat_ai_predict`: bulk inference of one NEAT-AI creature
+//! over a GRQ identified observation archive.
 //!
-//! The binary runs one NEAT-AI creature over every row of a GRQ identified
-//! observation archive and writes per-row predictions. This crate holds the
-//! request model the command line is parsed into and the validation every
-//! run performs before it touches the archive; `src/main.rs` stays a thin
-//! shell that parses arguments, calls in here and maps errors to exit codes.
+//! - [`archive`] resolves a published snapshot and reads its rows, verifying
+//!   every index, size and SHA-256 (issue #3).
+//! - [`engine`] loads the creature, enforces the input-width contract and
+//!   activates rows through `neat-core` (issue #4).
+//! - [`output`] writes GRQ-format prediction partitions and the provenance
+//!   manifest, atomically (issue #5).
+//! - [`run`] drives one run across the rayon pool (issue #6).
 //!
-//! The archive reader, the activation engine and the output writer land under
-//! separate issues (see the README); until then a validated request is where a
-//! run stops.
+//! This module holds the request the command line is parsed into and the
+//! validation every run performs before it touches the archive.
+//! `src/main.rs` stays a thin shell that parses arguments, calls [`run::run`]
+//! and maps errors to exit codes.
 
 #![deny(missing_docs)]
 #![deny(unsafe_code)]
+
+pub mod archive;
+pub mod engine;
+pub mod output;
+pub mod run;
 
 use std::error::Error;
 use std::fmt;
@@ -148,19 +157,18 @@ impl fmt::Display for MarketDate {
 /// Whether `id` can name an archive dataset snapshot.
 ///
 /// A dataset id becomes the file name `datasets/<id>.json`, so it must be a
-/// single path component: ASCII letters, digits, `.`, `_` and `-`, starting
-/// with a letter or digit, never `.` or `..`, and at most
-/// [`MAX_DATASET_ID_BYTES`] long. GRQ's writer applies the same rule when it
-/// publishes.
+/// single path component: one or more ASCII letters, digits, `.`, `_` or `-`,
+/// never `.` or `..` — GRQ's `validateDatasetId` rule exactly — and at most
+/// [`MAX_DATASET_ID_BYTES`] long.
 #[must_use]
 pub fn is_valid_dataset_id(id: &str) -> bool {
-    let mut chars = id.chars();
-    let Some(first) = chars.next() else {
-        return false;
-    };
-    id.len() <= MAX_DATASET_ID_BYTES
-        && first.is_ascii_alphanumeric()
-        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    !id.is_empty()
+        && id.len() <= MAX_DATASET_ID_BYTES
+        && id != "."
+        && id != ".."
+        && id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
 }
 
 /// One prediction run, as parsed from the command line.
@@ -170,7 +178,7 @@ pub struct PredictRequest {
     pub creature: PathBuf,
     /// Archive fingerprint root: `<root>/<extension>/<fingerprint>`.
     pub archive: PathBuf,
-    /// Snapshot to read; `None` resolves `datasets/latest.json`.
+    /// Snapshot to read; `None` reads the one `<archive>/latest.json` names.
     pub dataset: Option<String>,
     /// First market date to score, inclusive.
     pub from: Option<MarketDate>,
@@ -311,7 +319,8 @@ mod tests {
     fn dataset_ids_are_single_safe_path_components() {
         assert!(is_valid_dataset_id("20261004T093634Z-31163-6lgt1w"));
         assert!(is_valid_dataset_id("a.b_c-d"));
-        for bad in ["", ".", "..", "-x", "a/b", "a b", "a\\b", "ü"] {
+        assert!(is_valid_dataset_id("-x"), "GRQ's rule allows a leading '-'");
+        for bad in ["", ".", "..", "a/b", "a b", "a\\b", "ü"] {
             assert!(!is_valid_dataset_id(bad), "{bad:?} must be refused");
         }
         assert!(!is_valid_dataset_id(&"a".repeat(MAX_DATASET_ID_BYTES + 1)));

@@ -1,48 +1,134 @@
-# template-rust
+# NEAT-AI-Predict
 
-Template repository for stSoftwareAU Rust projects. A repository created from
-it starts with the files, lint settings, CI workflows and security tooling
-that the [VibeCoder](https://github.com/stSoftwareAU/VibeCoder) fleet scans
-expect, so adopting it into VibeCoder does not open a backlog of
-best-practice issues.
+Bulk inference for NEAT-AI creatures. `neat_ai_predict` runs **one** creature
+over **every** stock/date row of a GRQ identified observation archive —
+about twenty years of observations, written while GRQ generates its training
+data — and writes per-row predictions with full provenance.
 
-It ships a small working crate — a library (`src/lib.rs`) with a typed
-error, and a command-line binary (`src/main.rs`) that calls it — so every
-gate has real code to check from the first commit. Replace it with your own.
+It exists so GRQ-AutoTraderBackTesting can build historical day sheets and
+backtest AutoTrader policies against them without re-computing a single
+observation. The programme is tracked in
+[GRQ-AutoTraderBackTesting #115](https://github.com/stSoftwareAU/GRQ-AutoTraderBackTesting/issues/115);
+the consumer-side specification is
+[#111](https://github.com/stSoftwareAU/GRQ-AutoTraderBackTesting/issues/111)
+there, and the implementation plan is [issue #1](../../issues/1) here.
 
-## Using this template
+```mermaid
+flowchart LR
+    T[GRQ data host<br/>trainDataStocks --observation-archive] --> A[(Identified observation<br/>archive)]
+    A --> P[neat_ai_predict]
+    C[Creature JSON<br/>e.g. GRQ-cluster best] --> P
+    P --> O[(Prediction partitions<br/>+ manifest.json)]
+    O --> G[GRQ-AutoTraderBackTesting<br/>generate-scores → replay]
+```
 
-1. Create the repository from this template on GitHub (**Use this
-   template**), with `Develop` as the default branch.
-2. Rename the crate. In `Cargo.toml`, set `name`, `description` and
-   `repository`. Then replace `template_rust` in `src/main.rs` and
-   `tests/public_api.rs` with the new library name (hyphens become
-   underscores), and `template-rust` in the binary's usage message.
-3. Replace the example `greet` API and its tests with your own code.
-4. Rewrite this README for the new project. Keep the
-   [Build and quality gate](#build-and-quality-gate) section.
-5. If the binary will be copied to another machine, published as a crate or
-   built for `wasm32`, delete `.cargo/config.toml` (see
-   [Build profiles](#build-profiles)).
-6. Copy the template's GitHub settings onto the new repository:
-   `scripts/apply-repo-settings.sh stSoftwareAU/<name>` (see
-   [Repository settings](#repository-settings)).
-7. Add the repository to VibeCoder (an `add-repo: stSoftwareAU/<name>`
-   issue).
+## Status
+
+The repository holds the command-line skeleton, request validation and the
+fleet install script. The engine is not in this build: a validated `predict`
+request exits `69` (`EX_UNAVAILABLE`) naming [issue #1](../../issues/1).
+
+| Issue | Delivers |
+| --- | --- |
+| [#2](../../issues/2) | Scaffold: crate, CLI, `runlib.sh` (this) |
+| [#3](../../issues/3) | Archive reader: dataset chain, shard index, SHA-256 verification, replacement precedence |
+| [#4](../../issues/4) | Creature loading, input-width contract, activation parity with `neat-core` |
+| [#5](../../issues/5) | Output partitions and provenance manifest |
+| [#6](../../issues/6) | Parallel execution and a rows/s benchmark |
+| [#7](../../issues/7) | `family-sync` CI job for `scripts/runlib.sh` |
 
 ## Usage
 
 ```bash
-cargo run -- Ada          # prints "Hello, Ada!"
-cargo run -- ""           # prints an error on stderr and exits 1
+neat_ai_predict predict \
+  --creature  ../GRQ-cluster/creature.json \
+  --archive   ../Observations/116/b448fe6b43db398e \
+  --dataset   20261004T093634Z-31163-6lgt1w \   # optional; default datasets/latest.json
+  --from 2007-01-01 --to 2026-10-01 \           # optional, inclusive
+  --output    ../Predictions/cluster-2026-10-04
+
+neat_ai_predict --version
 ```
 
-The binary takes exactly one argument. A wrong argument count exits with
-code 64, the usage-error code from
-[`sysexits.h`](https://man.freebsd.org/cgi/man.cgi?query=sysexits).
+Exit codes follow BSD `sysexits.h`:
 
-The library's public API is `template_rust::greet`, `GreetError` and
-`MAX_NAME_CHARS`. Run `cargo doc --open` for its documentation.
+| Code | Meaning |
+| --- | --- |
+| `0` | Predictions written |
+| `2` | clap rejected the arguments (unknown flag, missing value, bad date) |
+| `64` | The request refused itself: `--from` after `--to`, an unsafe `--dataset`, an empty path |
+| `66` | `--creature` is not a file or `--archive` is not a directory |
+| `69` | The engine is not implemented in this build |
+
+Every refusal is printed on stderr. Nothing is ever skipped quietly.
+
+### Input: the GRQ identified observation archive
+
+The archive format is owned by GRQ and specified in its
+`docs/Identified_Observation_Archive.md`. In short:
+
+- `--archive` names a **fingerprint root**, `<root>/<extension>/<fingerprint>`.
+  Rows under a different fingerprint were assembled under different feature
+  semantics and are never mixed.
+- Shards are `<yyyy>/<mm>/<prefix>/<chunk>.bin`: exactly `inputCount`
+  little-endian `f32` values per row, in feature order, with no target. The
+  sibling `<chunk>.index.json` carries the semantics, the shard's SHA-256 and
+  one `{symbol, date, exchange?, alias?, row}` entry per row.
+- `datasets/<id>.json` are immutable snapshots; `datasets/latest.json` points
+  at the newest. A run reads only the shards its chosen snapshot references.
+
+### Contract rules
+
+- The creature's top-level `input` / `output` counts are authoritative and must
+  be at least 1. A creature narrower than the archive is extended with
+  unconnected inputs; a creature **wider** than the archive is refused — that
+  would be a contraction, and GRQ never contracts an observation set.
+- Activation goes through the same `neat-core` engine the fleet's
+  `rust_scorer` uses, so predictions are comparable with fleet scores. There
+  is no fallback engine.
+- A row whose output is not finite is reported by `symbol@date` and never
+  written as a number.
+- Every shard's SHA-256 is verified before a row of it is used.
+
+### Output
+
+One partition per `yyyy/mm/prefix` (`output_count` little-endian `f64` per
+row plus an index JSON) and a top-level `manifest.json` recording the creature
+UUID and file hash, the archive fingerprint and dataset id, the engine and
+`neat_ai_predict` versions, and per-partition row counts — so any consumer can
+prove which model scored which rows. Details in [#5](../../issues/5).
+
+## Installing on a fleet host
+
+Fleet hosts do not run `cargo build` on every task.
+[`scripts/runlib.sh`](./scripts/runlib.sh) installs
+`~/.cargo/bin/neat_ai_predict`, stamps it with
+`~/.cargo/bin/.neat_ai_predict.version` — the crate semver, written last —
+prints the installed path on stdout, and removes `target/` after a successful
+install. A second run at the same crate version prints
+`[neat_ai_predict] already installed v<x>` on stderr and runs no cargo command
+at all. A failed install keeps `target/` and leaves the previously installed
+binary and its stamp untouched. Delete the stamp to force a rebuild; there is
+no force flag.
+
+That file is **not** this repository's to edit. It is copied byte-for-byte
+from `scripts/runlib.sh` on
+[NEAT-AI-core](https://github.com/stSoftwareAU/NEAT-AI-core) `Develop`
+(core #680), where every NEAT-AI Rust sibling takes it from — behaviour
+changes are made there and re-copied outward. `scripts/test-runlib.sh` asserts
+the contract that copy owes this crate against fixture checkouts with a
+`cargo` shim, so "compiled nothing" is read off a log of every invocation
+rather than assumed. The CI job that refreshes the copy on every pull request
+is [#7](../../issues/7).
+
+It needs `cargo`, `rustc` and `jq` on the host — `jq` is what reads
+`cargo metadata` — and exits non-zero naming the missing one rather than
+guessing. It never installs a toolchain and never edits `RUSTFLAGS`.
+
+GRQ wires a sibling in through `worker/shared/neat_ai_runlib.sh`
+(`grq_neat_ai_runlib_ensure`) and lists it in
+`quality/neat_ai_runlib_siblings.list`; that half is filed in GRQ once the
+binary can predict.
 
 ## Build and quality gate
 
@@ -66,7 +152,7 @@ cargo fmt --all            # format
 `./quality.sh` runs these checks, and every one must pass:
 
 1. `bash -n` and ShellCheck on every shell script.
-2. The script tests.
+2. The script tests, including `scripts/test-runlib.sh`.
 3. codespell.
 4. markdownlint.
 5. actionlint.
@@ -98,7 +184,8 @@ CI runs the same checks on every pull request into `Develop`, `main` or
 - **`[profile.release]`** uses `opt-level = 3`, `lto = "fat"` and
   `codegen-units = 1`, which gives the fastest artefact.
 - **`.cargo/config.toml`** adds `-C target-cpu=native` for builds on the
-  machine that runs the binary. `./quality.sh` and CI set `RUSTFLAGS`, which
+  machine that runs the binary — the fleet pattern, since `runlib.sh` builds
+  on the host that runs it. `./quality.sh` and CI set `RUSTFLAGS`, which
   replaces it, so their builds stay portable.
 
 ## Branches and pull requests
@@ -107,8 +194,8 @@ CI runs the same checks on every pull request into `Develop`, `main` or
   `<type>/<issue-number>-<short-slug>`.
 - **Pull requests.** Open the pull request back into `Develop`, or into a
   `milestone/<slug>` branch for staged work.
-- **Commits.** Reference the issue, e.g. `Fix: reject empty names
-  (Issue #42)`.
+- **Commits.** Reference the issue, e.g. `Fix: refuse a wider creature
+  (Issue #4)`.
 
 [CONTRIBUTING.md](./CONTRIBUTING.md) has the full conventions.
 
@@ -124,8 +211,8 @@ CI runs the same checks on every pull request into `Develop`, `main` or
 | `actionlint.yml` | Workflow YAML lint. |
 | `gitleaks.yml` | Secret scanning of the PR's commits. |
 | `semgrep.yml` | [Static application security testing (SAST)](https://en.wikipedia.org/wiki/Static_application_security_testing). |
-| `codeql.yml` | GitHub CodeQL scanning. Public repositories only. |
-| `dependency-review.yml` | New-dependency vulnerability and licence review. Public repositories only. |
+| `codeql.yml` | GitHub CodeQL scanning. |
+| `dependency-review.yml` | New-dependency vulnerability and licence review. |
 | `sbom.yml` | [Software Bill of Materials (SBOM)](https://en.wikipedia.org/wiki/Software_bill_of_materials) in CycloneDX format, uploaded as an artefact. |
 
 Every third-party action is pinned to a full commit SHA, with its version in
@@ -136,48 +223,23 @@ the pins and crates current. Both quarantine new external releases; see
 
 ## Repository settings
 
-GitHub's **Use this template** copies files only, so a new repository starts
-without this template's settings. `scripts/apply-repo-settings.sh` reads
-them from this repository and applies them to the new one:
-
-- **Merge options:** squash and merge commits, no rebase merging,
-  auto-merge, update-branch, and delete-branch-on-merge.
-- **Rulesets:** these mirror the NEAT-AI repositories.
-  - **`Develop`** requires a pull request with one approval, squash merging,
-    and up-to-date status checks.
-  - **`milestone/**`** requires the same status checks, without the
-    up-to-date rule.
-  - **Both** block deletion and force-pushes; repository admins may bypass.
-  - **Required checks:** `quality`, `audit`, `shellcheck`, `markdownlint`,
-    `spelling`, `actionlint`, `gitleaks`, `semgrep` and `sbom`.
-- **Labels:** the fleet's workflow labels, such as `work-on`, `planning`,
-  `needs-human` and `severity:*`.
-- **Actions:**
-  - only GitHub-owned actions plus an allow-list of the third-party actions
-    the workflows use;
-  - full-length commit SHA pins required;
-  - read-only default workflow token, which cannot approve pull requests.
-- **Security:**
-  - Dependabot alerts and security updates;
-  - secret scanning with push protection;
-  - private vulnerability reporting, on public repositories.
-
-Secrets cannot be copied, because their values are not readable. Add
-`GITLEAKS_LICENSE`, `SEMGREP_APP_TOKEN` and `ACTIONS_PUSH` to the new
-repository where the organisation does not already provide them. Gitleaks
-falls back to the open-source CLI when it has no licence.
-
-When you add a workflow job that should gate merges, add its name to both
-rulesets here first, then re-run the script on each derived repository.
+This repository was created from
+[template-rust](https://github.com/stSoftwareAU/template-rust) and its
+GitHub settings (merge options, `Develop` and `milestone/**` rulesets, labels,
+Actions allow-list, security features) were applied with the template's
+`scripts/apply-repo-settings.sh`. Re-run that script from the template when
+the template's settings change.
 
 ## Layout
 
 | Path | Purpose |
 | --- | --- |
-| `src/lib.rs` | Library: the public API and its unit tests. |
-| `src/main.rs` | Binary: parses arguments, calls the library, maps errors to an exit code. |
+| `src/lib.rs` | Library: the request model, market dates, dataset-id and request validation, with unit tests. |
+| `src/main.rs` | Binary: clap argument parsing, filesystem checks, exit-code mapping. |
 | `tests/` | Public-API tests, run in process. |
-| `scripts/` | Shell helpers (quarantined `cargo update`, spelling, repository settings) and their tests. |
+| `scripts/runlib.sh` | Canonical NEAT-AI-core install script (do not edit here). |
+| `scripts/test-runlib.sh` | Contract tests for that copy, with a `cargo` shim. |
+| `scripts/` | Other shell helpers (quarantined `cargo update`, spelling, repository settings) and their tests. |
 | `.github/` | Workflows, the shared `setup-rust` action, Dependabot and CODEOWNERS. |
 
 ## Licence

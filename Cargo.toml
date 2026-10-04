@@ -1,22 +1,24 @@
 [package]
-name = "template-rust"
+name = "neat_ai_predict"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.98"
 license = "Apache-2.0"
-description = "Template for stSoftwareAU Rust projects that passes the VibeCoder best-practice scans."
-repository = "https://github.com/stSoftwareAU/template-rust"
+description = "Bulk inference: run one NEAT-AI creature over a GRQ identified observation archive and write per-row predictions with full provenance."
+repository = "https://github.com/stSoftwareAU/NEAT-AI-Predict"
 readme = "README.md"
-# Internal tooling: never publish to crates.io by accident.
+# Fleet tooling installed by scripts/runlib.sh: never publish to crates.io by accident.
 publish = false
 
 [lints]
 workspace = true
 
-# No dependencies yet. Add each one with a compatible-range version
-# (`serde = "1"`), never `*` or a bare git branch, and remove any that no
-# source file `use`s — the best-practice scan files dead dependencies.
+# Add each dependency with a compatible-range version (`serde = "1"`), never
+# `*` or a bare git branch, and remove any that no source file `use`s — the
+# best-practice scan files dead dependencies. `neat-core` arrives with the
+# activation engine (issue #4) and needs its git source allowed in deny.toml.
 [dependencies]
+clap = { version = "4", features = ["derive"] }
 
 [dev-dependencies]
 

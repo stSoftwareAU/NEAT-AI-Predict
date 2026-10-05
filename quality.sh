@@ -44,6 +44,9 @@ git ls-files -z '*.sh' | xargs -0 shellcheck -x --severity=style
 step "Script tests"
 ./scripts/test-cargo-update-quarantined.sh
 
+step "Sourced and called script paths exist (issue #29)"
+./scripts/test-script-refs.sh
+
 step "runlib.sh already-installed contract (issue #2)"
 ./scripts/test-runlib.sh
 

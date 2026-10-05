@@ -215,7 +215,9 @@ cargo fmt --all            # format
 `./quality.sh` runs these checks, and every one must pass:
 
 1. `bash -n` and ShellCheck on every shell script.
-2. The script tests, including `scripts/test-runlib.sh`.
+2. The script tests, including `scripts/test-runlib.sh` and
+   `scripts/test-script-refs.sh` (every sourced or called script path
+   resolves — issue #29).
 3. codespell.
 4. markdownlint.
 5. actionlint.

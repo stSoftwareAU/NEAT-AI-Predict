@@ -131,13 +131,22 @@ assert_problem() {
   fi
 }
 
+# Fixture `source ...` and `./scripts/...` lines below are appended via a
+# variable rather than written literally in a heredoc, so this file's own
+# source has no line starting with `source` or `./scripts/` other than real
+# source/call statements. Otherwise the real repo-wide scan at the bottom of
+# this script would match the fixture text where it sits in this file's own
+# source (Issue #29).
+
 # (a) sourcing an existing sibling via ${SCRIPT_DIR} is not a problem.
 touch "${SELF_TEST_WORK}/helper.sh"
 cat >"${SELF_TEST_WORK}/sources-sibling.sh" <<'EOF'
 #!/usr/bin/env bash
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/helper.sh"
 EOF
+# shellcheck disable=SC2016 # literal, unexpanded text to write out verbatim.
+sibling_source_line='source "${SCRIPT_DIR}/helper.sh"'
+printf '%s\n' "$sibling_source_line" >>"${SELF_TEST_WORK}/sources-sibling.sh"
 assert_no_problems "sourcing an existing sibling" \
   "${SELF_TEST_WORK}/sources-sibling.sh" "$SELF_TEST_WORK"
 
@@ -145,8 +154,10 @@ assert_no_problems "sourcing an existing sibling" \
 cat >"${SELF_TEST_WORK}/sources-missing.sh" <<'EOF'
 #!/usr/bin/env bash
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/gone.sh"
 EOF
+# shellcheck disable=SC2016 # literal, unexpanded text to write out verbatim.
+missing_source_line='source "${SCRIPT_DIR}/gone.sh"'
+printf '%s\n' "$missing_source_line" >>"${SELF_TEST_WORK}/sources-missing.sh"
 # shellcheck disable=SC2016 # literal token to match, not an expansion.
 assert_problem "sourcing a missing sibling" \
   "${SELF_TEST_WORK}/sources-missing.sh" "$SELF_TEST_WORK" MISSING '"${SCRIPT_DIR}/gone.sh"'
@@ -154,10 +165,11 @@ assert_problem "sourcing a missing sibling" \
 # (c) a Cargo.lock-style heredoc `source =` line reads like a source command
 # at the start of a line (Issue #29) and is reported MISSING for the token
 # `=`, the same naive-scanner shape as the original false positive.
-cat >"${SELF_TEST_WORK}/heredoc-fixture.sh" <<'EOF'
+git_source_fixture_line='source = "git+https://example.invalid/gamma?rev=abc#abc"'
+cat >"${SELF_TEST_WORK}/heredoc-fixture.sh" <<EOF
 #!/usr/bin/env bash
 cat <<LOCK
-source = "git+https://example.invalid/gamma?rev=abc#abc"
+${git_source_fixture_line}
 LOCK
 EOF
 assert_problem "Cargo.lock heredoc fixture line (issue #29 shape)" \
@@ -167,10 +179,12 @@ assert_problem "Cargo.lock heredoc fixture line (issue #29 shape)" \
 # UNRESOLVED rather than silently skipped.
 cat >"${SELF_TEST_WORK}/sources-unresolved.sh" <<'EOF'
 #!/usr/bin/env bash
-source "$OTHER/x.sh"
 EOF
 # shellcheck disable=SC2016 # literal, unexpanded token: the point is it
 # stays as "$OTHER/x.sh" so the resolved path still contains "$".
+unresolved_source_line='source "$OTHER/x.sh"'
+printf '%s\n' "$unresolved_source_line" >>"${SELF_TEST_WORK}/sources-unresolved.sh"
+# shellcheck disable=SC2016 # literal token to match, not an expansion.
 assert_problem "an unresolved variable path" \
   "${SELF_TEST_WORK}/sources-unresolved.sh" "$SELF_TEST_WORK" UNRESOLVED '"$OTHER/x.sh"'
 
@@ -187,15 +201,17 @@ mkdir -p "${SELF_TEST_WORK}/root/scripts"
 touch "${SELF_TEST_WORK}/root/scripts/called.sh"
 cat >"${SELF_TEST_WORK}/root/scripts/caller.sh" <<'EOF'
 #!/usr/bin/env bash
-./scripts/called.sh
 EOF
+caller_call_line='./scripts/called.sh'
+printf '%s\n' "$caller_call_line" >>"${SELF_TEST_WORK}/root/scripts/caller.sh"
 assert_no_problems "a repo-root call-form reference that exists" \
   "${SELF_TEST_WORK}/root/scripts/caller.sh" "${SELF_TEST_WORK}/root"
 
 cat >"${SELF_TEST_WORK}/root/scripts/caller-missing.sh" <<'EOF'
 #!/usr/bin/env bash
-./scripts/does-not-exist.sh
 EOF
+caller_missing_call_line='./scripts/does-not-exist.sh'
+printf '%s\n' "$caller_missing_call_line" >>"${SELF_TEST_WORK}/root/scripts/caller-missing.sh"
 assert_problem "a repo-root call-form reference that is missing" \
   "${SELF_TEST_WORK}/root/scripts/caller-missing.sh" "${SELF_TEST_WORK}/root" MISSING "./scripts/does-not-exist.sh"
 

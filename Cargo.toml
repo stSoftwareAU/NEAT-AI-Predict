@@ -2,7 +2,7 @@
 name = "neat_ai_predict"
 version = "0.2.0"
 edition = "2024"
-rust-version = "1.98"
+rust-version = "1.99"
 license = "Apache-2.0"
 description = "Bulk inference: run one NEAT-AI creature over a GRQ identified observation archive and write per-row predictions with full provenance."
 repository = "https://github.com/stSoftwareAU/NEAT-AI-Predict"

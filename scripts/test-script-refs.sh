@@ -215,6 +215,23 @@ printf '%s\n' "$caller_missing_call_line" >>"${SELF_TEST_WORK}/root/scripts/call
 assert_problem "a repo-root call-form reference that is missing" \
   "${SELF_TEST_WORK}/root/scripts/caller-missing.sh" "${SELF_TEST_WORK}/root" MISSING "./scripts/does-not-exist.sh"
 
+# (g) a `bash scripts/<name>` call resolves its second word against ROOT.
+cat >"${SELF_TEST_WORK}/root/scripts/bash-caller.sh" <<'EOF'
+#!/usr/bin/env bash
+EOF
+bash_call_line='bash scripts/called.sh'
+printf '%s\n' "$bash_call_line" >>"${SELF_TEST_WORK}/root/scripts/bash-caller.sh"
+assert_no_problems "a bash-prefixed call-form reference that exists" \
+  "${SELF_TEST_WORK}/root/scripts/bash-caller.sh" "${SELF_TEST_WORK}/root"
+
+cat >"${SELF_TEST_WORK}/root/scripts/bash-caller-missing.sh" <<'EOF'
+#!/usr/bin/env bash
+EOF
+bash_missing_call_line='bash scripts/absent.sh'
+printf '%s\n' "$bash_missing_call_line" >>"${SELF_TEST_WORK}/root/scripts/bash-caller-missing.sh"
+assert_problem "a bash-prefixed call-form reference that is missing" \
+  "${SELF_TEST_WORK}/root/scripts/bash-caller-missing.sh" "${SELF_TEST_WORK}/root" MISSING "scripts/absent.sh"
+
 if [[ "$self_test_failures" -ne 0 ]]; then
   echo "test-script-refs: ${self_test_failures} self-test assertion(s) failed" >&2
   exit 1

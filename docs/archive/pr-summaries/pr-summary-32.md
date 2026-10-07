@@ -63,12 +63,14 @@ flowchart LR
   G -->|any test uncovered| F[FAIL naming the script, exit 1]
 ```
 
-**Docs sweep:** I grepped `test-cargo-update-quarantined`, `test-runlib`,
-`test-script-refs`, `CI runs the same`, `same checks`, `quality.sh` and
-`shellcheck.yml` across `README.md`, `CONTRIBUTING.md`, `SECURITY.md`,
-`AGENTS.md`, `scripts/` and `.github/`. I updated `README.md` and
-`CONTRIBUTING.md`. `docs/` holds only `docs/archive/`, which I excluded.
-These hits are outside the diff:
+**Docs sweep** — grep: `test-cargo-update-quarantined`, `test-ci-script-tests`, `test-runlib`, `test-script-refs`, `shellcheck.yml`, `quality.sh`, "CI runs the same checks", "no workflow runs it"; section: `README.md#build-and-quality-gate`, `README.md#ci-workflows`, `CONTRIBUTING.md#branches-and-pull-requests`; updated: `README.md`, `CONTRIBUTING.md`
+
+I grepped those names and phrases across `README.md`, `CONTRIBUTING.md`,
+`SECURITY.md`, `AGENTS.md`, `scripts/` and `.github/`. `docs/` holds only
+`docs/archive/`, which I excluded, and there is no `*/README.md`. I read the
+three sections named above through at the head. Each one matches
+`quality.sh:45-54`, `shellcheck.yml:61-65` and `family-sync.yml:142`. These
+hits are outside the diff:
 
 - `README.md:203` — still true, because it only names `./quality.sh` as the
   source of install hints for missing tools.

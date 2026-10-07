@@ -1,6 +1,11 @@
 # Pin a concrete stable channel so every machine and CI run uses the same
 # compiler and the same lint set. Move it forward in its own reviewed PR.
+#
+# Keep it equal to `rust-version` in Cargo.toml: CI then builds at exactly the
+# declared minimum, and raising both is what makes the fleet's runlib.sh install
+# the newer toolchain on every host. 1.99 is the NEAT-AI family floor
+# (NEAT-AI-core#747).
 [toolchain]
-channel = "1.98.0"
+channel = "1.99.0"
 components = ["rustfmt", "clippy"]
 profile = "minimal"

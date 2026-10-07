@@ -47,6 +47,9 @@ step "Script tests"
 step "Sourced and called script paths exist (issue #29)"
 ./scripts/test-script-refs.sh
 
+step "Every script test runs in a PR workflow (issue #32)"
+./scripts/test-ci-script-tests.sh
+
 step "runlib.sh already-installed contract (issue #2)"
 ./scripts/test-runlib.sh
 

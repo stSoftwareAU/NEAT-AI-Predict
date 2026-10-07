@@ -107,11 +107,11 @@ SHIM
   # --filter-platform`; a rustc that names none is refused.
   cat >"${SHIM_DIR}/rustc" <<'SHIM'
 #!/usr/bin/env bash
-echo "rustc 1.98.0 (shim)"
+echo "rustc 1.99.0 (shim)"
 if [[ "${1:-}" == "-vV" ]]; then
   echo "binary: rustc"
   echo "host: x86_64-unknown-linux-gnu"
-  echo "release: 1.98.0"
+  echo "release: 1.99.0"
 fi
 SHIM
   chmod +x "${SHIM_DIR}/rustc"

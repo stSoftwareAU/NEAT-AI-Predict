@@ -14,7 +14,9 @@ this guide covers the habits for raising a change.
   runs on PRs into `milestone/**` too.
 - Reference the issue in the commit message and the PR title, e.g.
   `Fix: reject empty names (Issue #42)`, and put `Closes #42` in the PR body.
-- Run `./quality.sh` before you push. CI runs the same checks and a red CI run
+- Run `./quality.sh` before you push. CI runs the same checks in the
+  pull-request workflows — each script test `quality.sh` runs has a workflow
+  step, enforced by `scripts/test-ci-script-tests.sh` — and a red CI run
   blocks the merge.
 - There is no changelog file: the git history and the pull requests record
   what changed.

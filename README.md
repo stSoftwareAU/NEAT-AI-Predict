@@ -215,9 +215,12 @@ cargo fmt --all            # format
 `./quality.sh` runs these checks, and every one must pass:
 
 1. `bash -n` and ShellCheck on every shell script.
-2. The script tests, including `scripts/test-runlib.sh` and
+2. The script tests, including `scripts/test-runlib.sh`,
    `scripts/test-script-refs.sh` (every sourced or called script path
-   resolves — issue #29).
+   resolves — issue #29), `scripts/test-cargo-update-quarantined.sh` (the
+   `cargo-update-quarantined.sh` helper) and `scripts/test-ci-script-tests.sh`
+   (every script test `quality.sh` runs also runs in a pull-request
+   workflow — issue #32).
 3. codespell.
 4. markdownlint.
 5. actionlint.
@@ -226,10 +229,11 @@ cargo fmt --all            # format
 8. `cargo deny` and `cargo audit`.
 
 CI runs the same checks on every pull request into `Develop`, `main` or
-`milestone/*`, except `scripts/test-cargo-update-quarantined.sh`: no workflow
-runs it, so only `./quality.sh` does. `scripts/test-script-refs.sh` also runs
-as a step in the `ShellCheck` workflow (`.github/workflows/shellcheck.yml`),
-giving issue #29 its own layer-2 CI guard.
+`milestone/*`; the script tests run in the `ShellCheck` workflow
+(`.github/workflows/shellcheck.yml`), except `scripts/test-runlib.sh`, which
+runs in the `runlib-contract` job of `family-sync.yml`.
+`scripts/test-ci-script-tests.sh` fails the gate when a script test added to
+`quality.sh` has no pull-request workflow step.
 
 ### Code style
 
@@ -274,7 +278,7 @@ giving issue #29 its own layer-2 CI guard.
 | `cargo-quality.yml` | Formatting, Clippy, `cargo check`, tests, docs and `cargo deny`. A `quality` job aggregates the results. |
 | `cargo-audit.yml` | [RustSec](https://rustsec.org/) advisories, on every PR and weekly. |
 | `cargo-upgrade.yml` | Weekly `cargo update` pull request. Holds back versions under 24 hours old. |
-| `shellcheck.yml` | `bash -n`, ShellCheck, and `scripts/test-script-refs.sh` (issue #29). |
+| `shellcheck.yml` | `bash -n`, ShellCheck, and the script tests `scripts/test-script-refs.sh` (issue #29), `scripts/test-cargo-update-quarantined.sh` and `scripts/test-ci-script-tests.sh` (issue #32). |
 | `markdown-lint.yml` | markdownlint and codespell. |
 | `actionlint.yml` | Workflow YAML lint. |
 | `gitleaks.yml` | Secret scanning of the PR's commits. |

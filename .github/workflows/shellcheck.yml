@@ -3,7 +3,8 @@ name: ShellCheck
 # Shell script gates: `bash -n` syntax check and ShellCheck lint over every
 # `*.sh` file in the repository. ShellCheck is downloaded from a
 # version-pinned upstream release and verified against its SHA-256 checksum,
-# rather than taken from whatever the runner image happens to ship.
+# rather than taken from whatever the runner image happens to ship. It also
+# runs the repository's own script unit tests.
 
 on:
   pull_request:
@@ -58,3 +59,7 @@ jobs:
           git ls-files -z '*.sh' | xargs -0 --no-run-if-empty shellcheck -x --severity=style
       - name: Sourced and called script paths exist (issue #29)
         run: ./scripts/test-script-refs.sh
+      - name: cargo-update-quarantined helper tests (issue #32)
+        run: ./scripts/test-cargo-update-quarantined.sh
+      - name: Every quality.sh script test runs in a PR workflow (issue #32)
+        run: ./scripts/test-ci-script-tests.sh

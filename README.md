@@ -274,7 +274,7 @@ giving issue #29 its own layer-2 CI guard.
 | `cargo-quality.yml` | Formatting, Clippy, `cargo check`, tests, docs and `cargo deny`. A `quality` job aggregates the results. |
 | `cargo-audit.yml` | [RustSec](https://rustsec.org/) advisories, on every PR and weekly. |
 | `cargo-upgrade.yml` | Weekly `cargo update` pull request. Holds back versions under 24 hours old. |
-| `shellcheck.yml` | `bash -n` and ShellCheck. |
+| `shellcheck.yml` | `bash -n`, ShellCheck, and `scripts/test-script-refs.sh` (issue #29). |
 | `markdown-lint.yml` | markdownlint and codespell. |
 | `actionlint.yml` | Workflow YAML lint. |
 | `gitleaks.yml` | Secret scanning of the PR's commits. |

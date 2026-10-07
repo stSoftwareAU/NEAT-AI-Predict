@@ -15,6 +15,10 @@ Closes #29
   (`UNRESOLVED`). Self-tests (a)–(g) check the scanner before it scans the
   repository.
 - `quality.sh` runs the new test, and `README.md` lists it in the gate.
+- `.github/workflows/shellcheck.yml` also runs `scripts/test-script-refs.sh`
+  as a pull-request step (PR #31 review), giving issue #29's "Prevent
+  recurrence" ask a repo-local layer-2 CI guard rather than only the local
+  gate.
 
 ## Spec
 
@@ -54,9 +58,16 @@ screenshot.
   in `scripts/test-cargo-update-quarantined.sh` gives
   `MISSING: scripts/test-cargo-update-quarantined.sh:66 -> =` and exit 1.
   That is the #29 reference, at its line number on base.
-- The full `./quality.sh` gate passed: `All quality checks passed.`, exit 0.
+- `actionlint`, `cargo fmt --check`, `cargo clippy`, `cargo check`,
+  `cargo test` (43 passed), `cargo doc`, `cargo deny` and `cargo audit` (no
+  advisories) all passed, run individually. `bash -n`, ShellCheck, the script
+  tests and spell-check also passed as `./quality.sh` steps. `markdownlint`
+  only found issues under `.git/graft/` and `.git/worktrees/**/graft/` —
+  worker-internal code-graph state, not repository content — so the full
+  `./quality.sh` run could not reach its later steps; every other step was
+  confirmed individually, as listed above.
 
-**Docs sweep** — grep: `git grep -n -e 'test-script-refs' -e 'test-cargo-update-quarantined' -e 'Script tests'` over `*.md`, `*.sh` and `*.rs` (the PR summaries are excluded); section: `README.md#build-and-quality-gate`; updated: `README.md` (gate item 2 names `scripts/test-script-refs.sh`; the CI sentence says no workflow runs `scripts/test-cargo-update-quarantined.sh` or `scripts/test-script-refs.sh`, so only `./quality.sh` does). Hits outside the diff:
+**Docs sweep** — grep: `git grep -n -e 'test-script-refs' -e 'test-cargo-update-quarantined' -e 'Script tests'` over `*.md`, `*.sh` and `*.rs` (the PR summaries are excluded); section: `README.md#build-and-quality-gate`; updated: `README.md` (gate item 2 names `scripts/test-script-refs.sh`; the CI sentence now says `scripts/test-cargo-update-quarantined.sh` is the only script no workflow runs, and that `scripts/test-script-refs.sh` runs as a `ShellCheck` workflow step). Hits outside the diff:
 
 - `quality.sh:44` — still true because the `Script tests` step still runs the script tests, and the new step follows it.
 - `quality.sh:45` — still true because `./scripts/test-cargo-update-quarantined.sh` still exists and still runs as part of that step.
@@ -65,7 +76,8 @@ screenshot.
 - `scripts/test-cargo-update-quarantined.sh:121` — still true because the failure message is unchanged and still printed when an assertion fails.
 - `scripts/test-cargo-update-quarantined.sh:124` — still true because the success message is unchanged.
 
-Every hit in `README.md` (`:219`, `:229`, `:230`) and in
+Every hit in `README.md` (`:219`, `:228-231`), in
+`.github/workflows/shellcheck.yml` (new step) and in
 `scripts/test-script-refs.sh` (new file) is inside this diff.
 
 ## Test Plan
@@ -75,7 +87,15 @@ Every hit in `README.md` (`:219`, `:229`, `:230`) and in
 - [x] `./scripts/test-script-refs.sh` passes on the head, including
       self-tests (a)–(g).
 - [x] `./scripts/test-cargo-update-quarantined.sh` passes.
-- [x] `./quality.sh` passes.
+- [x] `actionlint`, `cargo fmt --check`, `cargo clippy`, `cargo check`,
+      `cargo test`, `cargo doc`, `cargo deny` and `cargo audit` all pass, run
+      individually (see Evidence — `./quality.sh` itself cannot reach these
+      steps in this environment because of the unrelated markdownlint/graft
+      fault).
+
+**Branch outcomes (this push):** none added — `.github/workflows/shellcheck.yml`
+gains an unconditional step, and the `README.md` wording change has no branch
+of its own.
 
 **Branch outcomes:**
 

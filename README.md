@@ -226,9 +226,10 @@ cargo fmt --all            # format
 8. `cargo deny` and `cargo audit`.
 
 CI runs the same checks on every pull request into `Develop`, `main` or
-`milestone/*`, except `scripts/test-cargo-update-quarantined.sh` and
-`scripts/test-script-refs.sh`: no workflow runs those two, so only
-`./quality.sh` does.
+`milestone/*`, except `scripts/test-cargo-update-quarantined.sh`: no workflow
+runs it, so only `./quality.sh` does. `scripts/test-script-refs.sh` also runs
+as a step in the `ShellCheck` workflow (`.github/workflows/shellcheck.yml`),
+giving issue #29 its own layer-2 CI guard.
 
 ### Code style
 

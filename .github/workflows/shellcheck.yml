@@ -56,3 +56,5 @@ jobs:
         run: |
           set -euo pipefail
           git ls-files -z '*.sh' | xargs -0 --no-run-if-empty shellcheck -x --severity=style
+      - name: Sourced and called script paths exist (issue #29)
+        run: ./scripts/test-script-refs.sh

@@ -26,6 +26,9 @@ assert_eq() {
 }
 
 registry='source = "registry+https://github.com/rust-lang/crates.io-index"'
+# Fixture `source =` lines go through variables so no line in this script
+# starts with `source` unless it is a real source command (Issue #29).
+git_source='source = "git+https://example.invalid/gamma?rev=abc#abc"'
 cat >"${WORK}/old.lock" <<EOF
 version = 4
 
@@ -63,7 +66,7 @@ checksum = "00"
 [[package]]
 name = "gamma"
 version = "0.3.0"
-source = "git+https://example.invalid/gamma?rev=abc#abc"
+${git_source}
 
 [[package]]
 name = "delta"

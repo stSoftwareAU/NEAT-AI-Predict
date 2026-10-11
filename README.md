@@ -321,6 +321,7 @@ the template's settings change.
 | `scripts/test-runlib.sh` | Contract tests for that copy, with a `cargo` shim. |
 | `scripts/` | Other shell helpers (quarantined `cargo update`, spelling, repository settings) and their tests. |
 | `.github/` | Workflows, the shared `setup-rust` action, Dependabot and CODEOWNERS. |
+| `.oss-scanner/` | Build image and threat-model brief for Anthropic's OSS Scanner. |
 
 ## Licence
 

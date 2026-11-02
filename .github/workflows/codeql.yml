@@ -4,7 +4,7 @@ name: CodeQL
 # themselves. Neither language needs a build. Code scanning is free on public
 # repositories but needs GitHub Advanced Security on private ones, so the job
 # is skipped (not failed) while the repository is private; Semgrep covers
-# static analysis either way.
+# static analysis either way
 
 on:
   pull_request:

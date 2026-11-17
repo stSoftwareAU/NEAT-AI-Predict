@@ -34,3 +34,8 @@ updates:
     open-pull-requests-limit: 5
     cooldown:
       default-days: 7
+    groups:
+      # Every github/codeql-action step must run the same version.
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"

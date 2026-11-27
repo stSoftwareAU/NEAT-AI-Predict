@@ -8,7 +8,10 @@ compaction and for duplicated structural rewrites. There are none:
 and activates it. Nothing here needs to move to the shared Rust compaction API,
 and under the parent's rule that "repositories that do not compact must not
 acquire new runtime compaction", this PR adds no code. This file is the audit
-record. Closes #59.
+record. The last step — re-pinning `neat-core` to the release that carries
+the additive API (stSoftwareAU/NEAT-AI-core#779) and re-running the
+compatibility checks against it — waits on that issue, which is still open.
+Part of #59.
 
 ## Spec
 
@@ -24,17 +27,18 @@ record. Closes #59.
   identity is the SHA-256 of its file bytes (`src/engine.rs` `CreatureFile`),
   and every prediction is pinned to it. Compacting before activation would
   change what is activated without changing that identity.
-- The `neat-core` pin stays at `v0.22.16`. This repository calls none of the
-  compaction surface, so the unified API (stSoftwareAU/NEAT-AI-core#779) is
-  not needed to finish this audit. Moving to a later release (`v0.22.17`, or
-  the `0.23` line) is left to the normal dependency sync: Renovate
-  (`renovate.json`) and the weekly `cargo update` PR (#51).
+- The `neat-core` pin stays at `v0.22.16` for now. The parent's rollout
+  contract has stage 4 consumers "upgrade independently after the additive
+  release" and verify the resolved revisions and lockfiles. That release
+  (stSoftwareAU/NEAT-AI-core#779) does not exist yet, so the re-pin and the
+  compatibility re-check against it are deferred until it does.
 
 ### Undiscoverable Facts
 
-- stSoftwareAU/NEAT-AI-core#779 was still open when this audit ran
-  (2026-11-26). The audit's finding does not depend on it, because nothing here
-  calls compaction, before or after that release.
+- stSoftwareAU/NEAT-AI-core#779 was still open on 2026-11-27 (latest
+  `neat-core` release `v0.23.16`). The finding that nothing here compacts does
+  not depend on it, but the issue's "merged and released" dependency and its
+  "latest compatible merged/released pins" step do.
 - The pinned `neat-core` `v0.22.16` does ship pruning modules
   (`neat-core/src/prune_*.rs`). Neither entry point this repository calls
   reaches them: `parse_creature_json` deserialises and checks the width, and
@@ -72,6 +76,13 @@ no source, manifest or lockfile changes. The existing parse and refusal tests
 `a_recurrent_creature_is_refused`, `a_wider_creature_is_refused`) and the
 bit-identity test (`bulk_is_bit_identical_to_single_record_activation`) still
 pass.
+
+## Acceptance Criteria
+
+- **missing** — Use latest compatible merged/released pins and normal
+  dependency sync — reason: stSoftwareAU/NEAT-AI-core#779 is not yet merged
+  or released, so there is no release carrying the additive API to pin to and
+  verify against.
 
 ## Test Plan
 
